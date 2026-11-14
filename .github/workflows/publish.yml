@@ -20,9 +20,21 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Docker Hub 凭据未配置/无效时跳过（GHCR 零配置，保证发版不被阻塞）
+      # secrets context 不能用于 if 条件——先经 env 转成 output
+      - name: Check Docker Hub credentials
+        id: dhcheck
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          if [ -n "$DOCKERHUB_USERNAME" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Docker Hub 凭据未配置时跳过（GHCR 零配置，保证发版不被阻塞）
       - name: Login to Docker Hub
-        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
+        if: steps.dhcheck.outputs.enabled == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -37,6 +49,8 @@ jobs:
 
       - name: Derive image tags
         id: tag
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             # 镜像 tag 与 git tag 一一对应（如 v0.1.0）
@@ -45,8 +59,8 @@ jobs:
             echo "version=dev-$(date +%Y%m%d-%H%M)" >> "$GITHUB_OUTPUT"
           fi
           # Docker Hub 仓库列表（凭据未配置时为空 → build-push 只推 GHCR）
-          if [[ -n "${{ secrets.DOCKERHUB_USERNAME }}" ]]; then
-            echo "dh_tags=${{ secrets.DOCKERHUB_USERNAME }}/debian-remote-trixie:${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          if [[ -n "$DOCKERHUB_USERNAME" ]]; then
+            echo "dh_tags=${DOCKERHUB_USERNAME}/debian-remote-trixie:${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           else
             echo "dh_tags=" >> "$GITHUB_OUTPUT"
           fi
