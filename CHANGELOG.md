@@ -25,11 +25,10 @@
 - 可靠性：xrdp.service 追加 drop-in（Restart=on-failure），崩溃自动拉起；
   fcitx5 追加 XDG autostart 条目，随会话自启动
 - 交付：docker-compose 一键部署、HEALTHCHECK 健康检查、
-  scripts/verify.sh 一键验证（19 项）、CI tag 触发双仓库发布
-  （Docker Hub + GHCR）、APT_MIRROR 构建加速参数（仅构建期生效）
+  scripts/verify.sh 一键验证（19 项）、CI tag 触发 Docker Hub 发布、
+  APT_MIRROR 构建加速参数（仅构建期生效）
 - 验证：WSL2（内核 6.18，纯 cgroup v2）+ Docker 29 实测 19/19 全绿，
   含命令注入防护、拒绝启动规则、数据持久化、优雅关机、xrdp 自愈、中文环境
-  （Docker Hub + GHCR）
 
 ### 与上游项目的差异
 

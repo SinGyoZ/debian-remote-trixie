@@ -128,10 +128,11 @@ docker build -t debian-remote-trixie:v0.1.0 .
 
 ## 发布（维护者）
 
-CI 由 git tag 触发（`.github/workflows/publish.yml`）：push `v*` 标签 → 构建并双推
-Docker Hub + GHCR（镜像 tag 与 git tag 同名）。
+CI 由 git tag 触发（`.github/workflows/publish.yml`）：push `v*` 标签 → 构建并推送
+Docker Hub（镜像 tag 与 git tag 同名，如 `singyoku/debian-remote-trixie:v0.1.0`）。
 
-需要配置的 Repository Secrets：`DOCKERHUB_USERNAME`、`DOCKERHUB_TOKEN`（GHCR 用内置 `GITHUB_TOKEN`，零配置）。
+需要配置的 Repository Secrets：`DOCKERHUB_USERNAME`（Docker Hub ID，如 `singyoku`）、
+`DOCKERHUB_TOKEN`（Docker Hub → Account Settings → Security → Access Token，Read & Write 权限）。
 
 ## 更新记录
 
