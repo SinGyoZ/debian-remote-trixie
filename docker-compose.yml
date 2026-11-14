@@ -13,12 +13,8 @@
 # ============================================================
 services:
   trixie-desktop:
-    image: debian-remote-trixie:v0.1.0
-    build:
-      context: .
-      args:
-        # 构建加速源（可选）：export APT_MIRROR=mirrors.tuna.tsinghua.edu.cn 后 build
-        APT_MIRROR: ${APT_MIRROR:-}
+    # 官方镜像（Docker Hub）；本地开发构建见 README「构建」章节
+    image: singyoku/debian-remote-trixie:v0.1.0
     container_name: trixie-desktop
     hostname: trixie-desktop
 
@@ -30,16 +26,17 @@ services:
     tty: true
     security_opt:
       - seccomp=unconfined
+      # Debian/Ubuntu 宿主的 AppArmor 默认配置会拒绝容器内挂载 cgroup
+      # （systemd 启动即退出），必须解除；无 AppArmor 的环境此行为空操作
+      - apparmor=unconfined
     cap_add:
       - SYS_ADMIN
     tmpfs:
       - /tmp
       - /run
       - /run/lock
-      # cgroup v2（主流内核，Docker 20.10+ 默认）：
+      # cgroup v2（Debian 11+ / Ubuntu 20.04+ 默认）：
       - /sys/fs/cgroup:rw
-      # 若宿主为 cgroup v1，注释掉上面一行，改用下面只读挂载：
-      # - /sys/fs/cgroup:/sys/fs/cgroup:ro
 
     # ---- 网络：默认直接监听公网所有接口（3389）----
     # ⚠ 安全提示：公网暴露 RDP 会被持续爆破，务必使用强密码，
@@ -60,6 +57,9 @@ services:
     volumes:
       # 桌面数据持久化：容器删除重建后用户家目录原样保留
       - trixie-home:/home
+      # 仅老式 cgroup v1 宿主使用（v2 宿主勿加！）：
+      # 先删掉上面 tmpfs 里的 /sys/fs/cgroup:rw 行，再加下面这行（rw 绑定，不是 ro）：
+      # - /sys/fs/cgroup:/sys/fs/cgroup:rw
 
     restart: unless-stopped
 

@@ -1,5 +1,16 @@
 # 更新记录
 
+## [未发布] — 部署配置修正
+
+- compose：新增 `apparmor=unconfined`——Debian/Ubuntu 宿主的 AppArmor 默认配置
+  拒绝容器内挂载 cgroup，缺失时 systemd 启动即退出（日志报
+  `Failed to mount cgroup ... Permission denied`）；无 AppArmor 的宿主为空操作
+- compose：默认镜像改为 Docker Hub 官方地址（`singyoku/debian-remote-trixie`），
+  `docker compose up -d` 直接拉取，不再要求本地构建；本地开发构建见 README
+- 修正 cgroup v1 宿主指引：初版把 volumes 语法写在 tmpfs 段注释里，
+  照抄会报 `invalid tmpfs option`；正确做法是 volumes 段 rw 绑定挂载
+- README：新增宿主要求与 `Failed to mount cgroup` 排障条目
+
 ## v0.1.0 - 2026-11-14
 
 初版发布。

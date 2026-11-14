@@ -22,6 +22,10 @@ Debian 13 (Trixie) + **systemd** + XRDP 远程桌面容器。一个容器，就�
 
 ## 快速开始
 
+> **宿主要求**：KVM / 独立服务器等完整虚拟化环境——OpenVZ、LXC 等共享内核型
+> VPS 无法运行任何 systemd 容器（平台硬限制，`systemd-detect-virt` 输出 `kvm`
+> 即满足）；Docker 20.10+；cgroup v2（Debian 11+ / Ubuntu 20.04+ 默认即满足）。
+
 ### 1. 配置密码（必做）
 
 ```bash
@@ -48,7 +52,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-首次构建约需数分钟（下载 XFCE 全套组件）。
+首次启动从 Docker Hub 拉取官方镜像；本地改代码构建见「构建」章节。
 
 ### 4. 连接远程桌面
 
@@ -97,13 +101,22 @@ systemd 想在容器里当好 PID 1，需要宿主放开一些权限，这些已
 | `stop_signal: SIGRTMIN+3` | `docker stop` 触发 systemd 关机流程（等同 `systemctl poweroff`） |
 | `tty: true` | 让 `/dev/console` 落到 pty，服务日志才能进入 `docker logs`（含首配错误信息） |
 | `security_opt: seccomp=unconfined` | 解除默认 seccomp 对 mount/namespace 调用的限制 |
+| `security_opt: apparmor=unconfined` | Debian/Ubuntu 宿主的 AppArmor 默认配置拒绝容器内挂载 cgroup，必须解除；无 AppArmor 的环境为空操作 |
 | `cap_add: SYS_ADMIN` | systemd 管理 cgroup 与挂载所需的最小特权 |
 | `tmpfs: /run /tmp /run/lock` | systemd 运行时目录（内存盘，重启即净） |
-| `tmpfs: /sys/fs/cgroup:rw` | cgroup v2；宿主若是 cgroup v1，改用 compose 内注释的只读挂载行 |
+| `tmpfs: /sys/fs/cgroup:rw` | cgroup v2 挂载点。cgroup v1 老宿主：删掉本行，改在 volumes 里 rw 绑定（见 compose 注释） |
 
 任何 systemd 容器（不只本镜像）都需要这套参数，照抄 compose 即可。
 
 ## 常见问题
+
+**容器反复重启，日志报 `Failed to mount cgroup ... Permission denied` / `Failed to mount cgroup v1 hierarchy`**
+
+systemd 拿不到 cgroup 挂载权限，按序排查：
+
+1. **没用 compose 启动**：裸 `docker run` 缺 cap/seccomp/tmpfs 那组参数，照抄仓库的 compose 即可
+2. **宿主启用了 AppArmor**（Debian/Ubuntu 标准安装默认如此）：必须带 `apparmor=unconfined`——v0.1.0 发布初版的 compose 漏了这项，`git pull` 最新版即可
+3. **VPS 是 OpenVZ/LXC 共享内核型**：虚拟化层直接拒绝挂载，systemd 容器无解，只能换 KVM 型 VPS
 
 **连接后黑屏 / 一闪退回登录页**
 多为会话启动失败。看日志：`docker logs trixie-desktop`，关注 `xrdp-sesman` 与 `xfce4-session` 的输出。确认用 `NEW_USER`（而非 root）登录。
