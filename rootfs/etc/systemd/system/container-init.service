@@ -1,0 +1,25 @@
+[Unit]
+Description=debian-remote-trixie declarative configuration (idempotent)
+Documentation=https://github.com/SinGyoZ/debian-remote-trixie
+# 在 xrdp 之前完成配置（密码策略可能改变 sesman 行为）
+After=local-fs.target
+Before=xrdp.service
+# 任何配置失败（含未提供密码的拒绝启动规则）→ 直接触发关机，
+# 容器退出并给出日志，绝不半启动、绝不回退弱口令
+OnFailure=poweroff.target
+
+[Service]
+Type=oneshot
+# 低敏配置项（TZ/NEW_USER 等）；密码不经过此文件
+EnvironmentFile=/run/container-init.env
+ExecStart=/usr/local/sbin/container-init
+# 密码文件由脚本 EXIT trap 清理；此处兜底删除 env 文件
+ExecStartPost=/usr/bin/rm -f /run/container-init.env
+RemainAfterExit=yes
+# 输出同时进 journal 与 console —— 拒绝启动等关键错误
+# 确保能在 docker logs 中直接看到（journald 就绪前的消息不丢）
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

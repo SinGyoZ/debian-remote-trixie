@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Fcitx 5
+GenericName=Input Method
+Comment=Start fcitx5 input method (Chinese input for RDP session)
+Exec=fcitx5
+Icon=fcitx
+Categories=System;Utility;
+X-GNOME-Autostart-Phase=Applications
+X-GNOME-Autostart-enabled=true
+OnlyShowIn=XFCE;

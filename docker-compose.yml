@@ -1,0 +1,73 @@
+# ============================================================
+# debian-remote-trixie — 一键部署
+#
+# 使用步骤：
+#   1) cp secrets/root_passwd.txt.example secrets/root_passwd.txt
+#      cp secrets/new_user_passwd.txt.example secrets/new_user_passwd.txt
+#      然后把密码写入这两个文件（单行、不要引号）
+#   2) cp .env.example .env 并按需修改
+#   3) docker compose up -d
+#   4) RDP 客户端连接 <主机IP>:3389
+#
+# 注意：secrets/*.txt 已被 .gitignore 排除，绝不会被提交
+# ============================================================
+services:
+  trixie-desktop:
+    image: debian-remote-trixie:v0.1.0
+    build:
+      context: .
+      args:
+        # 构建加速源（可选）：export APT_MIRROR=mirrors.tuna.tsinghua.edu.cn 后 build
+        APT_MIRROR: ${APT_MIRROR:-}
+    container_name: trixie-desktop
+    hostname: trixie-desktop
+
+    # ---- systemd 容器必需参数（勿删）----
+    # docker stop → systemd 完整关机序列
+    stop_signal: SIGRTMIN+3
+    # tty 使 /dev/console 落到 pty —— journald ForwardToConsole 的
+    # 全部服务日志（含首配错误）才能进入 docker logs
+    tty: true
+    security_opt:
+      - seccomp=unconfined
+    cap_add:
+      - SYS_ADMIN
+    tmpfs:
+      - /tmp
+      - /run
+      - /run/lock
+      # cgroup v2（主流内核，Docker 20.10+ 默认）：
+      - /sys/fs/cgroup:rw
+      # 若宿主为 cgroup v1，注释掉上面一行，改用下面只读挂载：
+      # - /sys/fs/cgroup:/sys/fs/cgroup:ro
+
+    # ---- 网络：默认直接监听公网所有接口（3389）----
+    # ⚠ 安全提示：公网暴露 RDP 会被持续爆破，务必使用强密码，
+    #   并建议叠加防火墙限源 IP 或 fail2ban（见 README「安全」章节）
+    ports:
+      - "3389:3389"
+
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      NEW_USER: ${NEW_USER:-}
+      NEW_USER_SUDO: ${NEW_USER_SUDO:-}
+      # DIS_ROOT: ${DIS_ROOT:-}      # yes = 锁定 root（必须同时提供 NEW_USER）
+      # GUEST_ACC: ${GUEST_ACC:-}    # yes = 启用弱口令 guest 账户（不建议）
+    secrets:
+      - root_passwd
+      - new_user_passwd
+
+    volumes:
+      # 桌面数据持久化：容器删除重建后用户家目录原样保留
+      - trixie-home:/home
+
+    restart: unless-stopped
+
+secrets:
+  root_passwd:
+    file: ./secrets/root_passwd.txt
+  new_user_passwd:
+    file: ./secrets/new_user_passwd.txt
+
+volumes:
+  trixie-home:

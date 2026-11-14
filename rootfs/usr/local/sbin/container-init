@@ -1,0 +1,152 @@
+#!/bin/sh
+# ============================================================
+# debian-remote-trixie 声明式配置引擎（幂等）
+#
+# 设计原则：
+#   1. 每次启动都执行；配置项"存在则应用，不存在则不动已有状态"
+#      —— 改 compose 变量/secrets 后重启即生效，无一次性标记文件
+#   2. 密码只从 /run/container-secrets/* 读取（entrypoint 归一化），
+#      经 stdin 管道喂给 chpasswd，不经 shell 拼接，无注入面
+#   3. 未提供任何可用密码且未显式 DIS_ROOT=yes 时拒绝启动
+#      —— 容器直接关机退出，绝不静默回退弱口令
+#   4. 输入校验：用户名 [a-z_][a-z0-9_-]{0,31}，
+#      密码禁控制字符（含换行，杜绝 chpasswd 多行注入）
+# ============================================================
+set -u
+
+SECRETS_DIR=/run/container-secrets
+
+log()  { echo "[container-init] $*"; }
+fail() { echo "[container-init] 拒绝启动: $*" >&2; exit 1; }
+
+# 用完即删：无论成功失败，密码文件不残留
+trap 'rm -rf "$SECRETS_DIR"' EXIT
+
+# ---------- 输入校验 ----------
+valid_username() {
+    printf '%s' "$1" | grep -Eq '^[a-z_][a-z0-9_-]{0,31}$'
+}
+
+# 字节级控制字符检测（0x00-0x1F 与 0x7F），兼容 UTF-8 密码
+has_ctrl() {
+    printf '%s' "$1" | od -An -v -tx1 | tr -s ' \n' '\n\n' \
+        | grep -Eq '^(0[0-9a-f]|1[0-9a-f]|7f)$'
+}
+
+valid_passwd() {
+    p="$1"
+    [ -n "$p" ] || return 1
+    [ "${#p}" -le 128 ] || return 1
+    if has_ctrl "$p"; then return 1; fi
+    return 0
+}
+
+read_secret() {
+    if [ -s "$SECRETS_DIR/$1" ]; then
+        cat "$SECRETS_DIR/$1"
+    fi
+}
+
+# ---------- 读取输入 ----------
+ROOT_PW="$(read_secret root_passwd)"
+NEW_USER_PW="$(read_secret new_user_passwd)"
+NEW_USER="${NEW_USER:-}"
+NEW_USER_SUDO="${NEW_USER_SUDO:-}"
+DIS_ROOT="${DIS_ROOT:-}"
+GUEST_ACC="${GUEST_ACC:-}"
+TZ="${TZ:-}"
+
+have_root_pw=0
+have_user_pw=0
+[ -n "$ROOT_PW" ] && have_root_pw=1
+[ -n "$NEW_USER_PW" ] && have_user_pw=1
+
+# ---------- 密码来源策略（拒绝启动规则）----------
+if [ "$DIS_ROOT" = "yes" ]; then
+    if [ -z "$NEW_USER" ]; then
+        fail "DIS_ROOT=yes 但未提供 NEW_USER —— 将没有任何账号可以登录"
+    fi
+else
+    if [ "$have_root_pw" -eq 0 ]; then
+        if [ -z "$NEW_USER" ] || [ "$have_user_pw" -eq 0 ]; then
+            fail "未提供任何密码（root_passwd/ROOT_PASSWD 或 NEW_USER + new_user_passwd/NEW_USER_PASSWD）。本镜像不设默认弱口令，请在 secrets 中配置密码后重新启动。"
+        fi
+    fi
+fi
+
+# ---------- root 账户 ----------
+if [ "$DIS_ROOT" = "yes" ]; then
+    log "DIS_ROOT=yes：锁定 root 账户"
+    passwd -l root >/dev/null 2>&1 || true
+    usermod -s /usr/sbin/nologin root || true
+    # xrdp 会话层面禁止 root 登录（幂等）
+    if [ -f /etc/xrdp/sesman.ini ]; then
+        sed -i 's/^AllowRootLogin=.*/AllowRootLogin=false/' /etc/xrdp/sesman.ini
+    fi
+elif [ "$have_root_pw" -eq 1 ]; then
+    if valid_passwd "$ROOT_PW"; then
+        printf 'root:%s\n' "$ROOT_PW" | chpasswd \
+            || fail "root 密码设置失败（chpasswd）"
+        log "root 密码已按当前配置更新"
+    else
+        fail "root 密码含非法字符（控制字符/换行/超长）"
+    fi
+fi
+
+# ---------- 新用户（幂等） ----------
+if [ -n "$NEW_USER" ]; then
+    if ! valid_username "$NEW_USER"; then
+        fail "NEW_USER 非法（仅允许小写字母/数字/_/-，且以字母或 _ 开头）"
+    fi
+    if id "$NEW_USER" >/dev/null 2>&1; then
+        log "用户 $NEW_USER 已存在，同步密码与权限"
+    else
+        log "创建用户 $NEW_USER"
+        useradd -m -s /bin/bash "$NEW_USER" \
+            || fail "用户 $NEW_USER 创建失败"
+    fi
+    if [ "$have_user_pw" -eq 1 ]; then
+        if valid_passwd "$NEW_USER_PW"; then
+            printf '%s:%s\n' "$NEW_USER" "$NEW_USER_PW" | chpasswd \
+                || fail "用户 $NEW_USER 密码设置失败（chpasswd）"
+            log "用户 $NEW_USER 的密码已按当前配置更新"
+        else
+            fail "NEW_USER 密码含非法字符（控制字符/换行/超长）"
+        fi
+    fi
+    if [ "$NEW_USER_SUDO" = "yes" ]; then
+        usermod -aG sudo "$NEW_USER"
+        log "用户 $NEW_USER 已加入 sudo 组"
+    fi
+fi
+
+# ---------- guest 账户（保留原项目能力，默认不启用） ----------
+if [ "$GUEST_ACC" = "yes" ]; then
+    if id guest >/dev/null 2>&1; then
+        log "guest 用户已存在"
+    else
+        log "创建 guest 账户（弱口令 guest，仅建议隔离环境使用）"
+        # 注意：不能 cp 覆盖 rbash —— Debian 中 rbash 是指向 bash 的符号链接，
+        # 直接 cp 会写穿符号链接损坏 bash 本身（原项目隐患）。
+        # bash 在 argv[0] 为 rbash 时自身进入受限模式，建软链即可。
+        [ -e /bin/rbash ] || ln -s bash /bin/rbash
+        useradd -m -s /bin/rbash guest \
+            || fail "guest 用户创建失败"
+        printf 'guest:guest\n' | chpasswd \
+            || fail "guest 密码设置失败"
+    fi
+fi
+
+# ---------- 时区 ----------
+if [ -n "$TZ" ]; then
+    if [ -e "/usr/share/zoneinfo/$TZ" ]; then
+        ln -sf "/usr/share/zoneinfo/$TZ" /etc/localtime
+        echo "$TZ" > /etc/timezone
+        log "时区已设置为 $TZ"
+    else
+        log "警告: 时区 $TZ 不存在（/usr/share/zoneinfo/$TZ），跳过"
+    fi
+fi
+
+log "配置完成"
+exit 0

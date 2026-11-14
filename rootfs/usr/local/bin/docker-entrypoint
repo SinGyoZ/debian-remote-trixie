@@ -1,0 +1,62 @@
+#!/bin/sh
+# ============================================================
+# debian-remote-trixie 容器入口
+#
+# 职责：把用户配置（环境变量 + secrets）归一化为 container-init
+#       的输入，然后把 PID 1 交给 systemd。本脚本自身不做配置。
+#
+# 密码传递路径（安全设计）：
+#   compose secrets（/run/secrets/*，只读挂载） 或 环境变量
+#       → 归一到 /run/container-secrets/*（0600）
+#       → container-init 读取后立即删除（EXIT trap）
+#   密码全程不经过 shell 拼接、不写入 systemd unit、不进 journal。
+# ============================================================
+set -eu
+
+INIT_ENV=/run/container-init.env
+SECRETS_DIR=/run/container-secrets
+
+mkdir -p /run
+umask 077
+
+# ---------- 0. cgroup 预挂载（systemd 容器兼容性关键） ----------
+# /sys/fs/cgroup 由 compose 挂为空 tmpfs（私有 cgroup namespace 场景）。
+# systemd 启动时若看到空挂载点会先尝试挂 cgroup v1 层级——
+# 在纯 cgroup v2 内核（如 WSL2、部分新内核）上 v1 已被禁用，
+# 挂载被拒会导致 systemd 直接退出（Failed to mount cgroup v1 hierarchy）。
+# 这里提前挂好 cgroup2，让 systemd 直接进入 unified 模式；
+# 传统 v1/hybrid 宿主上挂载失败则忽略，systemd 自行回退原有逻辑。
+if [ "$(stat -fc %T /sys/fs/cgroup 2>/dev/null)" != "cgroup2fs" ]; then
+    mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null || \
+        echo "[docker-entrypoint] warning: cgroup2 mount failed, leaving it to systemd"
+fi
+
+# ---------- 1. 低敏配置：环境变量 → 一次性 env 文件 ----------
+# TZ / DIS_ROOT / GUEST_ACC / NEW_USER / NEW_USER_SUDO
+: > "$INIT_ENV"
+for var in TZ DIS_ROOT GUEST_ACC NEW_USER NEW_USER_SUDO; do
+    eval "val=\${$var:-}"
+    if [ -n "$val" ]; then
+        printf '%s=%s\n' "$var" "$val" >> "$INIT_ENV"
+    fi
+done
+
+# ---------- 2. 密码：secrets 挂载优先，环境变量兜底 ----------
+mkdir -p "$SECRETS_DIR"
+
+pickup_secret() {
+    # $1 = secret 名, $2 = 对应的环境变量名
+    if [ -f "/run/secrets/$1" ]; then
+        tr -d '\r' < "/run/secrets/$1" > "$SECRETS_DIR/$1"
+    else
+        eval "val=\${$2:-}"
+        if [ -n "$val" ]; then
+            printf '%s' "$val" > "$SECRETS_DIR/$1"
+        fi
+    fi
+}
+
+pickup_secret root_passwd      ROOT_PASSWD
+pickup_secret new_user_passwd  NEW_USER_PASSWD
+
+exec /sbin/init
