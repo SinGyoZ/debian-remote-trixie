@@ -20,7 +20,9 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Docker Hub 凭据未配置/无效时跳过（GHCR 零配置，保证发版不被阻塞）
       - name: Login to Docker Hub
+        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -33,7 +35,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Derive image tag
+      - name: Derive image tags
         id: tag
         run: |
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
@@ -41,6 +43,12 @@ jobs:
             echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           else
             echo "version=dev-$(date +%Y%m%d-%H%M)" >> "$GITHUB_OUTPUT"
+          fi
+          # Docker Hub 仓库列表（凭据未配置时为空 → build-push 只推 GHCR）
+          if [[ -n "${{ secrets.DOCKERHUB_USERNAME }}" ]]; then
+            echo "dh_tags=${{ secrets.DOCKERHUB_USERNAME }}/debian-remote-trixie:${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "dh_tags=" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build and Push
@@ -50,7 +58,7 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/debian-remote-trixie:${{ steps.tag.outputs.version }}
+            ${{ steps.tag.outputs.dh_tags }}
             ghcr.io/${{ github.repository_owner }}/debian-remote-trixie:${{ steps.tag.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
