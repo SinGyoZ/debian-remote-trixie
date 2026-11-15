@@ -5,7 +5,7 @@
 # 基于 Riyangarma33/Debian-Remote-Docker 重构，感谢原作者：
 # https://github.com/Riyangarma33/Debian-Remote-Docker
 #
-# 构建：docker build -t debian-remote-trixie:v0.1.0 .
+# 构建：docker build -t debian-remote-trixie:v0.1.1 .
 # 运行：见 docker-compose.yml（必须使用 compose 中的
 #       cgroup / seccomp / STOPSIGNAL 参数，否则 systemd 无法作为 PID 1 运行）
 # ============================================================
@@ -59,7 +59,7 @@ RUN for u in systemd-remount-fs.service \
 #   xorgxrdp  : xrdp 的 Xorg 后端，缺它必黑屏（--no-install-recommends 会漏）
 #   fcitx5 系列 : 中文输入法；字体用 Noto CJK + 文泉驿微米黑
 #   注：音频重定向（pulseaudio-module-xrdp）是 Ubuntu 独有包，
-#       Debian 未收录；待上游收录后再引入，v0.1.0 不含音频
+#       Debian 未收录；待上游收录后再引入，当前版本不含音频
 RUN apt-get update && apt-get install -y --no-install-recommends \
         xfce4 xfce4-terminal xfce4-datetime-plugin dbus-x11 \
         xrdp xorgxrdp \
@@ -93,9 +93,11 @@ EXPOSE 3389
 # docker stop → systemd 完整关机序列（数据优雅落盘）
 STOPSIGNAL SIGRTMIN+3
 
+# 探活改查内核监听表（3389 = 0x0D3D；xrdp 为 IPv6 双栈 socket，查 tcp6 为主）。
+# 裸 TCP 探活会触发 xrdp 记 ERROR（libxrdp_force_read），每 30 秒刷屏——故不连接。
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD systemctl is-active xrdp.service >/dev/null 2>&1 \
-        && bash -c 'exec 3<>/dev/tcp/127.0.0.1/3389' \
+        && grep -qE ':0D3D .* 0A ' /proc/net/tcp /proc/net/tcp6 \
         || exit 1
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint"]

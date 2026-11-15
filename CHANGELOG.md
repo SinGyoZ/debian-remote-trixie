@@ -1,7 +1,14 @@
 # 更新记录
 
-## [未发布] — 部署配置修正
+## v0.1.1 - 2026-11-15
 
+真实服务器（Debian KVM VPS，cgroup v2）部署验证后的问题修复：
+
+- 镜像：HEALTHCHECK 无噪音化——原裸 TCP 探活被 xrdp 当作坏客户端，
+  每 30 秒刷一串 `libxrdp_force_read` ERROR 污染日志；
+  改为查内核监听表（`/proc/net/tcp6`，3389=0x0D3D，xrdp 为 IPv6 双栈），xrdp 零感知
+- 镜像：entrypoint 在 cgroup2 挂载失败时给出根因提示
+  （缺 `apparmor=unconfined` / OpenVZ-LXC 宿主），不再只留一句模糊警告
 - compose：新增 `apparmor=unconfined`——Debian/Ubuntu 宿主的 AppArmor 默认配置
   拒绝容器内挂载 cgroup，缺失时 systemd 启动即退出（日志报
   `Failed to mount cgroup ... Permission denied`）；无 AppArmor 的宿主为空操作

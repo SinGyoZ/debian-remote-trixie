@@ -16,9 +16,9 @@ Debian 13 (Trixie) + **systemd** + XRDP 远程桌面容器。一个容器，就�
   - 无任何第三方 apt 源
 - **开箱中文**：zh_CN.UTF-8 locale、Noto CJK + 文泉驿字体、fcitx5 拼音输入法随会话自启动
 - **可观测**：服务日志经 journald 转发 console，`docker logs` 直接可读；内置 HEALTHCHECK
-- **单镜像单 tag**：每个 git tag 对应一个镜像版本（`v0.1.0`），版本可追溯
+- **单镜像单 tag**：每个 git tag 对应一个镜像版本（`v0.1.1`），版本可追溯
 
-> 已知限制：v0.1.0 不含音频重定向——Debian 官方源暂无 `pulseaudio-module-xrdp`（Ubuntu 独有包），待上游收录后引入。
+> 已知限制：当前版本不含音频重定向——Debian 官方源暂无 `pulseaudio-module-xrdp`（Ubuntu 独有包），待上游收录后引入。
 
 ## 快速开始
 
@@ -136,13 +136,13 @@ systemd 拿不到 cgroup 挂载权限，按序排查：
 ## 构建
 
 ```bash
-docker build -t debian-remote-trixie:v0.1.0 .
+docker build -t debian-remote-trixie:v0.1.1 .
 ```
 
 ## 发布（维护者）
 
 CI 由 git tag 触发（`.github/workflows/publish.yml`）：push `v*` 标签 → 构建并推送
-Docker Hub（镜像 tag 与 git tag 同名，如 `singyoku/debian-remote-trixie:v0.1.0`）。
+Docker Hub（镜像 tag 与 git tag 同名，如 `singyoku/debian-remote-trixie:v0.1.1`）。
 
 需要配置的 Repository Secrets：`DOCKERHUB_USERNAME`（Docker Hub ID，如 `singyoku`）、
 `DOCKERHUB_TOKEN`（Docker Hub → Account Settings → Security → Access Token，Read & Write 权限）。

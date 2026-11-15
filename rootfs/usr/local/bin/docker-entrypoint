@@ -27,8 +27,12 @@ umask 077
 # 这里提前挂好 cgroup2，让 systemd 直接进入 unified 模式；
 # 传统 v1/hybrid 宿主上挂载失败则忽略，systemd 自行回退原有逻辑。
 if [ "$(stat -fc %T /sys/fs/cgroup 2>/dev/null)" != "cgroup2fs" ]; then
-    mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null || \
+    if ! mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null; then
         echo "[docker-entrypoint] warning: cgroup2 mount failed, leaving it to systemd"
+        echo "[docker-entrypoint] if systemd then exits with 'Failed to mount cgroup', check:"
+        echo "[docker-entrypoint]   1) missing 'apparmor=unconfined' in security_opt (Debian/Ubuntu hosts)"
+        echo "[docker-entrypoint]   2) OpenVZ/LXC host: systemd containers unsupported, use a KVM VPS"
+    fi
 fi
 
 # ---------- 1. 低敏配置：环境变量 → 一次性 env 文件 ----------

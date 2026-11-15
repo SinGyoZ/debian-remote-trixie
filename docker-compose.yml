@@ -14,7 +14,7 @@
 services:
   trixie-desktop:
     # 官方镜像（Docker Hub）；本地开发构建见 README「构建」章节
-    image: singyoku/debian-remote-trixie:v0.1.0
+    image: singyoku/debian-remote-trixie:v0.1.1
     container_name: trixie-desktop
     hostname: trixie-desktop
 

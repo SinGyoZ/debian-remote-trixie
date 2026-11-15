@@ -48,13 +48,14 @@ echo "Phase A：安全验证（临时容器，用完即删）"
 echo "============================================================"
 
 VERIFY_CONTAINER=trixie-verify
+IMG=debian-remote-trixie:v0.1.1
 INJECT_PW='P@ss;w0rd`$(touch /tmp/pwned)#'
 # 清理历史残留
 docker rm -f "$VERIFY_CONTAINER" >/dev/null 2>&1 || true
 
 info "构建镜像（如本地已有则复用缓存；APT_MIRROR 环境变量可传入构建加速源）"
 docker build ${APT_MIRROR:+--build-arg APT_MIRROR="$APT_MIRROR"} \
-    -t debian-remote-trixie:v0.1.0 . >/dev/null 2>&1 || {
+    -t "$IMG" . >/dev/null 2>&1 || {
     bad "镜像构建失败，请手动执行 docker build 查看日志"; summary; exit 1; }
 
 info "启动注入用例容器（密码含 shell 元字符，验证不发生命令注入）"
@@ -64,7 +65,7 @@ docker run -d -t --name "$VERIFY_CONTAINER" \
     --cap-add SYS_ADMIN \
     --tmpfs /tmp --tmpfs /run --tmpfs /run/lock --tmpfs /sys/fs/cgroup:rw \
     -e ROOT_PASSWD="$INJECT_PW" \
-    debian-remote-trixie:v0.1.0 >/dev/null
+    "$IMG" >/dev/null
 
 # 等待 container-init 执行 + xrdp 就绪
 sleep 12
@@ -138,7 +139,7 @@ else
     if ! docker run -d -t --name "$VERIFY_CONTAINER" \
         --security-opt seccomp=unconfined --cap-add SYS_ADMIN \
         --tmpfs /tmp --tmpfs /run --tmpfs /run/lock --tmpfs /sys/fs/cgroup:rw \
-        debian-remote-trixie:v0.1.0 >/dev/null 2>&1; then
+        "$IMG" >/dev/null 2>&1; then
         bad "A4 测试容器启动失败（docker run 错误）"
     else
         A4_ID="$(docker inspect -f '{{.Id}}' "$VERIFY_CONTAINER" 2>/dev/null | cut -c1-12)"
